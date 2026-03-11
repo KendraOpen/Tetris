@@ -148,6 +148,11 @@
         
         <div class="side-panel">
             <div class="panel-box">
+                <div class="panel-title">Hold</div>
+                <canvas id="holdCanvas" class="next-piece-canvas" width="100" height="80"></canvas>
+            </div>
+            
+            <div class="panel-box">
                 <div class="panel-title">Score</div>
                 <div class="score-display" id="score">0</div>
             </div>
@@ -173,6 +178,7 @@
                     <span>↑</span> Rotate<br>
                     <span>↓</span> Soft Drop<br>
                     <span>SPACE</span> Hard Drop<br>
+                    <span>C</span> Hold/Swap<br>
                     <span>P</span> Pause
                 </div>
             </div>
@@ -190,6 +196,8 @@
         const ctx = canvas.getContext('2d');
         const nextCanvas = document.getElementById('nextCanvas');
         const nextCtx = nextCanvas.getContext('2d');
+        const holdCanvas = document.getElementById('holdCanvas');
+        const holdCtx = holdCanvas.getContext('2d');
         
         const COLS = 10;
         const ROWS = 20;
@@ -357,8 +365,10 @@
             
             // Get next piece
             currentPiece = nextPiece;
+            canHold = true;
             nextPiece = getRandomPiece();
             drawNextPiece();
+            drawHoldPiece();
             
             // Check game over
             if (checkCollision(currentPiece)) {
@@ -535,6 +545,37 @@
             nextCtx.shadowBlur = 0;
         }
         
+        function drawHoldPiece() {
+            holdCtx.fillStyle = '#0a0e17';
+            holdCtx.fillRect(0, 0, holdCanvas.width, holdCanvas.height);
+            
+            if (!holdPiece) return;
+            
+            const blockSize = 20;
+            const offsetX = (holdCanvas.width - holdPiece.matrix[0].length * blockSize) / 2;
+            const offsetY = (holdCanvas.height - holdPiece.matrix.length * blockSize) / 2;
+            
+            holdCtx.shadowColor = holdPiece.color;
+            holdCtx.shadowBlur = 10;
+            
+            for (let row = 0; row < holdPiece.matrix.length; row++) {
+                for (let col = 0; col < holdPiece.matrix[row].length; col++) {
+                    if (holdPiece.matrix[row][col]) {
+                        holdCtx.fillStyle = holdPiece.color;
+                        holdCtx.globalAlpha = 0.3;
+                        holdCtx.fillRect(offsetX + col * blockSize + 1, offsetY + row * blockSize + 1, blockSize - 2, blockSize - 2);
+                        
+                        holdCtx.globalAlpha = 1;
+                        holdCtx.strokeStyle = holdPiece.color;
+                        holdCtx.lineWidth = 1;
+                        holdCtx.strokeRect(offsetX + col * blockSize + 1, offsetY + row * blockSize + 1, blockSize - 2, blockSize - 2);
+                    }
+                }
+            }
+            
+            holdCtx.shadowBlur = 0;
+        }
+        
         // Show game over
         function showGameOver() {
             document.getElementById('finalScore').textContent = score;
@@ -560,6 +601,7 @@
             currentPiece = getRandomPiece();
             nextPiece = getRandomPiece();
             drawNextPiece();
+            drawHoldPiece();
             updateUI();
             hideGameOver();
         }
@@ -585,23 +627,34 @@
             requestAnimationFrame(gameLoop);
         }
         
-        // Input handlers
-        document.addEventListener('keydown', (e) => {
-            if (gameOver) {
-                if (e.code === 'Enter') {
-                    resetGame();
-                }
-                return;
+        // DAS - Delayed Auto Shift for smooth movement
+        let dasTimer = null;
+        let dasDelay = 150; // ms before repeat starts
+        let dasRepeat = 50; // ms between repeats
+        let dasActive = false;
+        
+        function startDAS(code) {
+            if (dasActive) return;
+            dasActive = true;
+            handleKey(code);
+            dasTimer = setTimeout(() => {
+                dasTimer = setInterval(() => handleKey(code), dasRepeat);
+            }, dasDelay);
+        }
+        
+        function stopDAS() {
+            dasActive = false;
+            if (dasTimer) {
+                clearTimeout(dasTimer);
+                clearInterval(dasTimer);
+                dasTimer = null;
             }
+        }
+        
+        function handleKey(code) {
+            if (gameOver || paused) return;
             
-            if (e.code === 'KeyP') {
-                paused = !paused;
-                return;
-            }
-            
-            if (paused) return;
-            
-            switch(e.code) {
+            switch(code) {
                 case 'ArrowLeft':
                     movePiece(-1, 0);
                     break;
@@ -619,9 +672,77 @@
                 case 'Space':
                     hardDrop();
                     break;
+                case 'KeyC':
+                    swapPiece();
+                    break;
+            }
+        }
+        
+        // Hold piece
+        let holdPiece = null;
+        let canHold = true;
+        
+        function swapPiece() {
+            if (!canHold) return;
+            
+            const temp = currentPiece;
+            if (holdPiece === null) {
+                holdPiece = temp;
+                spawnPiece();
+            } else {
+                currentPiece = holdPiece;
+                currentPiece.x = 4;
+                currentPiece.y = 0;
+                holdPiece = temp;
+            }
+            
+            canHold = false;
+            updateUI();
+        }
+        
+        // Input handlers
+        document.addEventListener('keydown', (e) => {
+            if (gameOver) {
+                if (e.code === 'Enter') {
+                    resetGame();
+                }
+                return;
+            }
+            
+            if (e.code === 'KeyP') {
+                paused = !paused;
+                return;
+            }
+            
+            if (paused) return;
+            
+            // Start DAS for arrow keys
+            if (e.code === 'ArrowLeft' || e.code === 'ArrowRight' || e.code === 'ArrowDown') {
+                startDAS(e.code);
+            }
+            
+            // Handle C for hold
+            if (e.code === 'KeyC') {
+                swapPiece();
+            }
+            
+            // Regular keys
+            switch(e.code) {
+                case 'ArrowUp':
+                    rotatePiece(currentPiece);
+                    break;
+                case 'Space':
+                    hardDrop();
+                    break;
             }
             
             e.preventDefault();
+        });
+        
+        document.addEventListener('keyup', (e) => {
+            if (e.code === 'ArrowLeft' || e.code === 'ArrowRight' || e.code === 'ArrowDown') {
+                stopDAS();
+            }
         });
         
         // Initialize and start
