@@ -1,0 +1,11 @@
+{
+  "name": "tetris",
+  "version": "1.0.0",
+  "description": "Neon cyberpunk Tetris game",
+  "scripts": {
+    "start": "npx serve .",
+    "dev": "npx serve ."
+  },
+  "keywords": ["tetris", "game", "cyberpunk"],
+  "license": "MIT"
+}
